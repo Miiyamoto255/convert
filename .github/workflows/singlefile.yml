@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     timeout-minutes: 45
 
     steps:
@@ -36,6 +36,7 @@ jobs:
       - name: Check lint, format, and prebuilts
         run: |
           bun run lint
+          bun run fmt -- scripts/verify-singlefile.mjs scripts/smoke-singlefile.mjs
           bun run fmt:check
           bun run build:check
 
@@ -74,7 +75,7 @@ jobs:
           retention-days: 14
 
       - name: Upload regular multi-file site as fallback
-        if: always()
+        if: always() && hashFiles('dist/**') != ''
         uses: actions/upload-artifact@v4
         with:
           name: convert-full-site
