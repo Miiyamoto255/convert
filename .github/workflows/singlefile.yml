@@ -1,0 +1,83 @@
+name: Build Convert HTML bundle
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: convert-singlefile-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout (including submodules)
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install locked dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Check lint, format, and prebuilts
+        run: |
+          bun run lint
+          bun run fmt:check
+          bun run build:check
+
+      - name: Build the official multi-file app
+        run: |
+          export VITE_COMMIT_SHA="${GITHUB_SHA}"
+          bun run build
+
+      - name: Generate supported-format cache
+        run: bun run cache:build
+
+      - name: Run project tests
+        run: bun test ./test/
+
+      - name: Install single-file build plugin without changing project manifests
+        run: bun add --no-save vite-plugin-singlefile@2.3.4
+
+      - name: Build HTML-first bundle
+        run: bun run vite build --config vite.singlefile.config.mjs
+
+      - name: Include generated format cache
+        run: cp dist/cache.json dist-single/cache.json
+
+      - name: Verify bundle contents
+        run: node scripts/verify-singlefile.mjs
+
+      - name: Browser smoke test
+        run: node scripts/smoke-singlefile.mjs
+
+      - name: Upload HTML bundle and its required sidecar files
+        uses: actions/upload-artifact@v4
+        with:
+          name: convert-html-bundle
+          path: dist-single/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload regular multi-file site as fallback
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: convert-full-site
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14
